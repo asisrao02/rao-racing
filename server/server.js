@@ -10,13 +10,10 @@ import { RaceResult } from "./src/models/RaceResult.js";
 const app = express();
 const server = http.createServer(app);
 
-const PORT = Number(process.env.PORT ?? 4000);
-const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
-const MONGO_URI = process.env.MONGO_URI ?? "";
-const CLIENT_URLS = (process.env.CLIENT_URLS || CLIENT_URL)
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const CLIENT_URLS = [
+  "http://localhost:5173",
+  "https://rao-racing.vercel.app"
+];
 
 const LOCAL_ORIGIN_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
