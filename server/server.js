@@ -1,0 +1,147 @@
+import "dotenv/config";
+import http from "http";
+import express from "express";
+import cors from "cors";
+import mongoose from "mongoose";
+import { setupSocket } from "./socket.js";
+import { User } from "./src/models/User.js";
+import { RaceResult } from "./src/models/RaceResult.js";
+
+const app = express();
+const server = http.createServer(app);
+
+const PORT = Number(process.env.PORT ?? 4000);
+const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
+const MONGO_URI = process.env.MONGO_URI ?? "";
+
+app.use(cors({ origin: CLIENT_URL }));
+app.use(express.json());
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "rao-racing-server",
+    mongo: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+  });
+});
+
+app.get("/api/leaderboard", async (_req, res) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      res.json({ leaders: [] });
+      return;
+    }
+
+    const leaders = await User.find({})
+      .sort({ wins: -1, bestLapMs: 1, races: -1, updatedAt: -1 })
+      .limit(20)
+      .lean();
+
+    res.json({
+      leaders: leaders.map((leader, index) => ({
+        rank: index + 1,
+        username: leader.username,
+        wins: leader.wins,
+        races: leader.races,
+        bestLapMs: leader.bestLapMs,
+      })),
+    });
+  } catch (error) {
+    console.error("Leaderboard fetch failed:", error.message);
+    res.status(500).json({ leaders: [] });
+  }
+});
+
+function normalizeUsername(username) {
+  return String(username).trim().toLowerCase();
+}
+
+async function persistRaceResults(room) {
+  if (mongoose.connection.readyState !== 1) {
+    return;
+  }
+
+  const players = [...room.players.values()]
+    .sort((a, b) => {
+      const placeA = a.place ?? 9999;
+      const placeB = b.place ?? 9999;
+      if (placeA !== placeB) {
+        return placeA - placeB;
+      }
+
+      if (a.lap !== b.lap) {
+        return b.lap - a.lap;
+      }
+
+      return b.progress - a.progress;
+    })
+    .map((player, index) => ({
+      username: player.username,
+      place: player.place ?? index + 1,
+      finishTimeMs: player.finishTimeMs ?? null,
+      bestLapMs: player.bestLapMs ?? null,
+      lap: player.lap ?? 0,
+    }));
+
+  if (!players.length) {
+    return;
+  }
+
+  await Promise.all(
+    players.map(async (entry) => {
+      const normalizedUsername = normalizeUsername(entry.username);
+      const user = await User.findOneAndUpdate(
+        { normalizedUsername },
+        {
+          $setOnInsert: {
+            username: entry.username,
+            normalizedUsername,
+          },
+          $inc: {
+            races: 1,
+            wins: entry.place === 1 ? 1 : 0,
+          },
+        },
+        { upsert: true, new: true }
+      );
+
+      if (entry.bestLapMs) {
+        const shouldUpdateBest = !user.bestLapMs || entry.bestLapMs < user.bestLapMs;
+        if (shouldUpdateBest) {
+          user.bestLapMs = entry.bestLapMs;
+          await user.save();
+        }
+      }
+    })
+  );
+
+  await RaceResult.create({
+    roomCode: room.code,
+    durationMs: room.startedAt && room.finishedAt ? room.finishedAt - room.startedAt : null,
+    players,
+  });
+}
+
+setupSocket(server, {
+  clientUrl: CLIENT_URL,
+  onRaceFinished: persistRaceResults,
+});
+
+async function bootstrap() {
+  if (MONGO_URI) {
+    try {
+      await mongoose.connect(MONGO_URI);
+      console.log("MongoDB connected");
+    } catch (error) {
+      console.error("MongoDB connection failed:", error.message);
+    }
+  } else {
+    console.warn("MONGO_URI missing. Leaderboard persistence disabled.");
+  }
+
+  server.listen(PORT, () => {
+    console.log(`RAO RACING server listening on http://localhost:${PORT}`);
+  });
+}
+
+bootstrap();

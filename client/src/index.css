@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #e6f7ff;
+  background: #070f1b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  font-family: "Rajdhani", sans-serif;
+  background: radial-gradient(circle at 10% 20%, #163456 0%, #0a1728 40%, #040912 100%);
+}
+
+body {
+  color: #e6f7ff;
+}
+
+.app-bg {
+  position: relative;
+  min-height: 100vh;
+}
+
+.app-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(76, 248, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(76, 248, 255, 0.05) 1px, transparent 1px);
+  background-size: 26px 26px;
+  opacity: 0.35;
+}
+
+.glass {
+  background: rgba(14, 30, 49, 0.86);
+  border: 1px solid rgba(76, 248, 255, 0.3);
+  box-shadow: 0 0 0 1px rgba(255, 79, 31, 0.16), 0 16px 48px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+}
+
+.game-canvas-wrap {
+  position: fixed;
+  inset: 0;
+  background: #030811;
+}
