@@ -1,12 +1,12 @@
 export const LAPS_TO_WIN = 3;
 
 export const TRACK = {
-  midRadiusX: 48,
-  midRadiusZ: 30,
-  outerRadiusX: 58,
-  outerRadiusZ: 40,
-  innerRadiusX: 38,
-  innerRadiusZ: 20,
+  midRadiusX: 180,
+  midRadiusZ: 90,
+  outerRadiusX: 205,
+  outerRadiusZ: 115,
+  innerRadiusX: 155,
+  innerRadiusZ: 65,
 };
 
 export const DEFAULT_CONTROLS = {

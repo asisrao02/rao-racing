@@ -152,10 +152,22 @@ function restartToLobby(io, room) {
 }
 
 export function setupSocket(server, options = {}) {
+  const allowedOrigins = options.clientOrigins || [];
+  const localOriginRegex = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
   const io = new Server(server, {
     cors: {
-      origin: options.clientUrl ?? "*",
+      origin: (origin, callback) => {
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+
+        const allowed = allowedOrigins.includes(origin) || localOriginRegex.test(origin);
+        callback(null, allowed);
+      },
       methods: ["GET", "POST"],
+      credentials: true,
     },
   });
 

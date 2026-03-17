@@ -13,8 +13,28 @@ const server = http.createServer(app);
 const PORT = Number(process.env.PORT ?? 4000);
 const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
 const MONGO_URI = process.env.MONGO_URI ?? "";
+const CLIENT_URLS = (process.env.CLIENT_URLS || CLIENT_URL)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-app.use(cors({ origin: CLIENT_URL }));
+const LOCAL_ORIGIN_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+function isAllowedOrigin(origin) {
+  if (!origin) {
+    return true;
+  }
+  return CLIENT_URLS.includes(origin) || LOCAL_ORIGIN_REGEX.test(origin);
+}
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      callback(null, isAllowedOrigin(origin));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
@@ -123,7 +143,7 @@ async function persistRaceResults(room) {
 }
 
 setupSocket(server, {
-  clientUrl: CLIENT_URL,
+  clientOrigins: CLIENT_URLS,
   onRaceFinished: persistRaceResults,
 });
 

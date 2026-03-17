@@ -3,15 +3,15 @@ import { LAPS_TO_WIN, TRACK } from "./constants";
 const TWO_PI = Math.PI * 2;
 
 const PHYSICS = {
-  maxForwardSpeed: 42,
+  maxForwardSpeed: 52,
   maxReverseSpeed: -16,
-  acceleration: 28,
+  acceleration: 32,
   reverseAcceleration: 18,
   brakeForce: 46,
   friction: 14,
   steerRate: 2.35,
-  nitroExtraAccel: 20,
-  nitroTopSpeedMultiplier: 1.32,
+  nitroExtraAccel: 24,
+  nitroTopSpeedMultiplier: 1.4,
   nitroDrainPerSecond: 30,
   nitroRegenPerSecond: 12,
 };

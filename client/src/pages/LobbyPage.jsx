@@ -23,6 +23,7 @@ function LobbyPage() {
   const [joinCode, setJoinCode] = useState("");
   const [message, setMessage] = useState("Create a room or join one with a code.");
   const [busy, setBusy] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
     if (mode !== "multiplayer") {
@@ -32,6 +33,10 @@ function LobbyPage() {
 
   useEffect(() => {
     const socket = ensureSocket();
+    setIsConnected(socket.connected);
+    if (!socket.connected) {
+      socket.connect();
+    }
 
     const handleRoomState = (state) => {
       setRoomState(state);
@@ -56,16 +61,35 @@ function LobbyPage() {
       }
     };
 
+    const handleConnect = () => {
+      setIsConnected(true);
+      setMessage((current) =>
+        current.includes("Create a room") || current.includes("disconnected")
+          ? "Connected. Create a room or join one with a code."
+          : current
+      );
+    };
+
     const handleDisconnect = () => {
-      setMessage("Socket disconnected. Reconnecting...");
+      setIsConnected(false);
+      setMessage("Socket disconnected. Check server and retry.");
+    };
+
+    const handleConnectError = (error) => {
+      setIsConnected(false);
+      setMessage(`Server connection failed: ${error.message}`);
     };
 
     socket.on("room:state", handleRoomState);
+    socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
+    socket.on("connect_error", handleConnectError);
 
     return () => {
       socket.off("room:state", handleRoomState);
+      socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
+      socket.off("connect_error", handleConnectError);
     };
   }, [ensureSocket, navigate, playerId, setPlayerId, setResultState, setRoomCode, setRoomState]);
 
@@ -81,10 +105,37 @@ function LobbyPage() {
     return players.find((player) => player.id === roomState.hostId)?.username || "Host";
   }, [players, roomState]);
 
-  const createRoom = () => {
+  const emitWithTimeout = (eventName, payload, onResponse) => {
     setBusy(true);
-    socket.emit("room:create", { username }, (response) => {
+    let handled = false;
+    const timeoutId = setTimeout(() => {
+      if (handled) {
+        return;
+      }
+      handled = true;
       setBusy(false);
+      setMessage("Server did not respond. Confirm backend is running on port 4000.");
+    }, 7000);
+
+    socket.emit(eventName, payload, (response) => {
+      if (handled) {
+        return;
+      }
+      handled = true;
+      clearTimeout(timeoutId);
+      setBusy(false);
+      onResponse(response);
+    });
+  };
+
+  const createRoom = () => {
+    if (!socket.connected) {
+      socket.connect();
+      setMessage("Connecting to server... please try again in a second.");
+      return;
+    }
+
+    emitWithTimeout("room:create", { username }, (response) => {
       if (!response?.ok) {
         setMessage(response?.error || "Unable to create room.");
         return;
@@ -96,15 +147,19 @@ function LobbyPage() {
   };
 
   const joinRoom = () => {
+    if (!socket.connected) {
+      socket.connect();
+      setMessage("Connecting to server... please try again in a second.");
+      return;
+    }
+
     const nextCode = joinCode.trim().toUpperCase();
     if (!nextCode) {
       setMessage("Enter a room code first.");
       return;
     }
 
-    setBusy(true);
-    socket.emit("room:join", { roomCode: nextCode, username }, (response) => {
-      setBusy(false);
+    emitWithTimeout("room:join", { roomCode: nextCode, username }, (response) => {
       if (!response?.ok) {
         setMessage(response?.error || "Unable to join room.");
         return;
@@ -116,9 +171,13 @@ function LobbyPage() {
   };
 
   const startRace = () => {
-    setBusy(true);
-    socket.emit("race:start", {}, (response) => {
-      setBusy(false);
+    if (!socket.connected) {
+      socket.connect();
+      setMessage("Connecting to server... please try again.");
+      return;
+    }
+
+    emitWithTimeout("race:start", {}, (response) => {
       if (!response?.ok) {
         setMessage(response?.error || "Unable to start race.");
       }
@@ -138,6 +197,9 @@ function LobbyPage() {
             <p className="font-display text-sm uppercase tracking-[0.15em] text-cyan-200/80">Multiplayer Lobby</p>
             <h1 className="font-display text-4xl font-bold text-white md:text-5xl">RAO RACING ROOMS</h1>
             <p className="mt-2 text-cyan-100/85">{message}</p>
+            <p className={`mt-1 text-sm ${isConnected ? "text-emerald-300" : "text-amber-300"}`}>
+              Server status: {isConnected ? "Connected" : "Disconnected"}
+            </p>
           </div>
 
           {!roomState && (

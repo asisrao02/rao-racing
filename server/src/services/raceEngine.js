@@ -5,15 +5,15 @@ const TWO_PI = Math.PI * 2;
 const CAR_COLLISION_RADIUS = 2.3;
 
 const PHYSICS = {
-  maxForwardSpeed: 42,
+  maxForwardSpeed: 52,
   maxReverseSpeed: -16,
-  acceleration: 28,
+  acceleration: 32,
   reverseAcceleration: 18,
   brakeForce: 46,
   friction: 14,
   steerRate: 2.35,
-  nitroExtraAccel: 20,
-  nitroTopSpeedMultiplier: 1.32,
+  nitroExtraAccel: 24,
+  nitroTopSpeedMultiplier: 1.4,
   nitroDrainPerSecond: 30,
   nitroRegenPerSecond: 12,
 };
@@ -37,12 +37,12 @@ export function sanitizeUsername(rawUsername) {
 
 export function createTrack() {
   return {
-    midRadiusX: 48,
-    midRadiusZ: 30,
-    outerRadiusX: 58,
-    outerRadiusZ: 40,
-    innerRadiusX: 38,
-    innerRadiusZ: 20,
+    midRadiusX: 180,
+    midRadiusZ: 90,
+    outerRadiusX: 205,
+    outerRadiusZ: 115,
+    innerRadiusX: 155,
+    innerRadiusZ: 65,
   };
 }
 

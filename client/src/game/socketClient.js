@@ -10,7 +10,12 @@ function resolveServerUrl() {
   if (typeof window !== "undefined") {
     const protocol = window.location.protocol;
     const hostname = window.location.hostname;
-    return `${protocol}//${hostname}:4000`;
+    const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+    if (isLocal) {
+      return `${protocol}//${hostname}:4000`;
+    }
+
+    return `${protocol}//${hostname}`;
   }
 
   return "http://localhost:4000";
@@ -19,8 +24,10 @@ function resolveServerUrl() {
 export function getSocket() {
   if (!socketInstance) {
     socketInstance = io(resolveServerUrl(), {
-      transports: ["websocket"],
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 15,
+      timeout: 6000,
     });
   }
 
