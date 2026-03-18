@@ -1,13 +1,39 @@
 export const LAPS_TO_WIN = 3;
 export const MAX_PLAYERS_PER_ROOM = 8;
 
-const TWO_PI = Math.PI * 2;
+const TRACK_WIDTH = 38;
 const CAR_COLLISION_RADIUS = 2.3;
 
+const TRACK_CONTROL_POINTS = [
+  { x: 0, z: 0 },
+  { x: 180, z: -20 },
+  { x: 420, z: -10 },
+  { x: 760, z: 40 },
+  { x: 980, z: 180 },
+  { x: 960, z: 380 },
+  { x: 820, z: 560 },
+  { x: 620, z: 700 },
+  { x: 360, z: 760 },
+  { x: 120, z: 700 },
+  { x: -60, z: 560 },
+  { x: -220, z: 460 },
+  { x: -480, z: 470 },
+  { x: -760, z: 380 },
+  { x: -980, z: 180 },
+  { x: -960, z: -120 },
+  { x: -760, z: -300 },
+  { x: -520, z: -420 },
+  { x: -220, z: -500 },
+  { x: 60, z: -470 },
+  { x: 320, z: -390 },
+  { x: 520, z: -280 },
+  { x: 700, z: -180 },
+];
+
 const PHYSICS = {
-  maxForwardSpeed: 52,
+  maxForwardSpeed: 54,
   maxReverseSpeed: -16,
-  acceleration: 32,
+  acceleration: 33,
   reverseAcceleration: 18,
   brakeForce: 46,
   friction: 14,
@@ -26,69 +52,194 @@ function sanitizeNumber(value, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function catmullRomScalar(p0, p1, p2, p3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return (
+    0.5 *
+    (2 * p1 +
+      (-p0 + p2) * t +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
+  );
+}
+
+function generateCenterline(points, samplesPerSegment = 26) {
+  const output = [];
+  const count = points.length;
+
+  for (let index = 0; index < count; index += 1) {
+    const p0 = points[(index - 1 + count) % count];
+    const p1 = points[index];
+    const p2 = points[(index + 1) % count];
+    const p3 = points[(index + 2) % count];
+
+    for (let sample = 0; sample < samplesPerSegment; sample += 1) {
+      const t = sample / samplesPerSegment;
+      output.push({
+        x: catmullRomScalar(p0.x, p1.x, p2.x, p3.x, t),
+        z: catmullRomScalar(p0.z, p1.z, p2.z, p3.z, t),
+      });
+    }
+  }
+
+  return output;
+}
+
+function buildTrackSegments(centerline) {
+  const segments = [];
+  let totalLength = 0;
+
+  for (let index = 0; index < centerline.length; index += 1) {
+    const a = centerline[index];
+    const b = centerline[(index + 1) % centerline.length];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const length = Math.hypot(dx, dz);
+    if (length < 0.0001) {
+      continue;
+    }
+
+    segments.push({
+      ax: a.x,
+      az: a.z,
+      bx: b.x,
+      bz: b.z,
+      dx,
+      dz,
+      length,
+      startLength: totalLength,
+    });
+
+    totalLength += length;
+  }
+
+  return { segments, totalLength };
+}
+
+function buildBounds(points, margin = 240) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+
+  points.forEach((point) => {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minZ = Math.min(minZ, point.z);
+    maxZ = Math.max(maxZ, point.z);
+  });
+
+  return {
+    minX: minX - margin,
+    maxX: maxX + margin,
+    minZ: minZ - margin,
+    maxZ: maxZ + margin,
+  };
+}
+
+function closestPointOnTrack(track, x, z) {
+  let best = null;
+
+  for (const segment of track.segments) {
+    const lengthSquared = segment.length * segment.length;
+    const apx = x - segment.ax;
+    const apz = z - segment.az;
+    const t = clamp((apx * segment.dx + apz * segment.dz) / lengthSquared, 0, 1);
+    const closestX = segment.ax + segment.dx * t;
+    const closestZ = segment.az + segment.dz * t;
+    const dx = x - closestX;
+    const dz = z - closestZ;
+    const distanceSq = dx * dx + dz * dz;
+
+    if (!best || distanceSq < best.distanceSq) {
+      const distance = Math.sqrt(distanceSq);
+      const tangentX = segment.dx / segment.length;
+      const tangentZ = segment.dz / segment.length;
+      const fallbackNormalX = -tangentZ;
+      const fallbackNormalZ = tangentX;
+      const outNormalX = distance > 0.0001 ? dx / distance : fallbackNormalX;
+      const outNormalZ = distance > 0.0001 ? dz / distance : fallbackNormalZ;
+
+      best = {
+        distanceSq,
+        distance,
+        closestX,
+        closestZ,
+        tangentX,
+        tangentZ,
+        outNormalX,
+        outNormalZ,
+        progress: (segment.startLength + segment.length * t) / track.totalLength,
+      };
+    }
+  }
+
+  return best;
+}
+
+function createSpawnPoint(track, spawnIndex) {
+  const row = Math.floor(spawnIndex / 2);
+  const laneSign = spawnIndex % 2 === 0 ? -1 : 1;
+  const backOffset = row * 10;
+  const lateralOffset = laneSign * (track.width * 0.23);
+
+  const x = track.startPoint.x - track.startTangent.x * backOffset + track.startNormal.x * lateralOffset;
+  const z = track.startPoint.z - track.startTangent.z * backOffset + track.startNormal.z * lateralOffset;
+
+  return {
+    x,
+    z,
+    yaw: Math.atan2(track.startTangent.x, track.startTangent.z),
+  };
+}
+
+function confinePlayerToTrack(track, player) {
+  const info = closestPointOnTrack(track, player.x, player.z);
+  if (!info) {
+    return { progress: 0 };
+  }
+
+  if (info.distance > track.halfWidth) {
+    const clampDistance = track.halfWidth * 0.995;
+    player.x = info.closestX + info.outNormalX * clampDistance;
+    player.z = info.closestZ + info.outNormalZ * clampDistance;
+    player.speed *= -0.28;
+  } else if (info.distance > track.halfWidth * 0.88) {
+    player.speed *= 0.992;
+  }
+
+  return info;
+}
+
 export function sanitizeUsername(rawUsername) {
   const trimmed = String(rawUsername ?? "Racer").trim();
   if (!trimmed) {
     return "Racer";
   }
-
   return trimmed.replace(/[^\w\s-]/g, "").slice(0, 24) || "Racer";
 }
 
 export function createTrack() {
-  return {
-    midRadiusX: 180,
-    midRadiusZ: 90,
-    outerRadiusX: 205,
-    outerRadiusZ: 115,
-    innerRadiusX: 155,
-    innerRadiusZ: 65,
-  };
-}
-
-function createSpawnPoint(track, spawnIndex) {
-  const row = Math.floor(spawnIndex / 2);
-  const lane = spawnIndex % 2;
+  const centerline = generateCenterline(TRACK_CONTROL_POINTS, 26);
+  const { segments, totalLength } = buildTrackSegments(centerline);
+  const firstSegment = segments[0];
+  const tangentX = firstSegment.dx / firstSegment.length;
+  const tangentZ = firstSegment.dz / firstSegment.length;
 
   return {
-    x: track.midRadiusX - 2 - row * 3.5,
-    z: lane === 0 ? -2.5 : 2.5,
-    yaw: 0,
+    name: "Rao Grand Circuit",
+    width: TRACK_WIDTH,
+    halfWidth: TRACK_WIDTH * 0.5,
+    controlPoints: TRACK_CONTROL_POINTS,
+    centerline,
+    segments,
+    totalLength,
+    startPoint: { x: firstSegment.ax, z: firstSegment.az },
+    startTangent: { x: tangentX, z: tangentZ },
+    startNormal: { x: -tangentZ, z: tangentX },
+    bounds: buildBounds(centerline),
   };
-}
-
-function getEllipseProgress(track, x, z) {
-  const angle = Math.atan2(z / track.midRadiusZ, x / track.midRadiusX);
-  const normalized = ((angle % TWO_PI) + TWO_PI) % TWO_PI;
-  return normalized / TWO_PI;
-}
-
-function projectInsideTrack(track, player) {
-  let x = player.x;
-  let z = player.z;
-
-  const outer =
-    (x * x) / (track.outerRadiusX * track.outerRadiusX) +
-    (z * z) / (track.outerRadiusZ * track.outerRadiusZ);
-  if (outer > 1) {
-    const scale = 1 / Math.sqrt(outer);
-    x *= scale * 0.995;
-    z *= scale * 0.995;
-    player.speed *= -0.35;
-  }
-
-  const inner =
-    (x * x) / (track.innerRadiusX * track.innerRadiusX) +
-    (z * z) / (track.innerRadiusZ * track.innerRadiusZ);
-  if (inner < 1) {
-    const scale = 1 / Math.sqrt(Math.max(inner, 0.0001));
-    x *= scale * 1.01;
-    z *= scale * 1.01;
-    player.speed *= -0.2;
-  }
-
-  player.x = x;
-  player.z = z;
 }
 
 function applyFriction(player, dt) {
@@ -96,7 +247,6 @@ function applyFriction(player, dt) {
     player.speed = 0;
     return;
   }
-
   const frictionDelta = PHYSICS.friction * dt;
   if (player.speed > 0) {
     player.speed = Math.max(0, player.speed - frictionDelta);
@@ -107,7 +257,6 @@ function applyFriction(player, dt) {
 
 function updateOnePlayer(room, player, dt, now) {
   const controls = player.inputs;
-  const racingActive = room.phase === "racing";
   const turnInput = (controls.right ? 1 : 0) - (controls.left ? 1 : 0);
 
   if (controls.throttle) {
@@ -126,8 +275,7 @@ function updateOnePlayer(room, player, dt, now) {
 
   let maxForwardSpeed = PHYSICS.maxForwardSpeed;
   player.isBoosting = false;
-
-  if (racingActive && controls.nitro && player.nitro > 0 && player.speed > 6) {
+  if (controls.nitro && player.nitro > 0 && player.speed > 6) {
     player.isBoosting = true;
     player.speed += PHYSICS.nitroExtraAccel * dt;
     maxForwardSpeed *= PHYSICS.nitroTopSpeedMultiplier;
@@ -147,12 +295,11 @@ function updateOnePlayer(room, player, dt, now) {
   player.x += Math.sin(player.yaw) * player.speed * dt;
   player.z += Math.cos(player.yaw) * player.speed * dt;
 
-  projectInsideTrack(room.track, player);
+  const trackInfo = confinePlayerToTrack(room.track, player);
+  const newProgress = trackInfo.progress;
 
-  const newProgress = getEllipseProgress(room.track, player.x, player.z);
-
-  if (racingActive && !player.completed) {
-    if (player.prevProgress > 0.92 && newProgress < 0.1 && player.speed > 2) {
+  if (!player.completed) {
+    if (player.prevProgress > 0.96 && newProgress < 0.08 && player.speed > 3) {
       const lapTime = player.lastLapStartAt ? now - player.lastLapStartAt : null;
       if (lapTime && lapTime > 1000) {
         player.bestLapMs = player.bestLapMs ? Math.min(player.bestLapMs, lapTime) : lapTime;
@@ -189,7 +336,6 @@ function resolveCarCollisions(room) {
     for (let j = i + 1; j < players.length; j += 1) {
       const a = players[i];
       const b = players[j];
-
       const dx = b.x - a.x;
       const dz = b.z - a.z;
       const distanceSq = dx * dx + dz * dz;
@@ -201,12 +347,10 @@ function resolveCarCollisions(room) {
       const overlap = minDistance - distance;
       const nx = dx / distance;
       const nz = dz / distance;
-
       a.x -= nx * overlap * 0.5;
       a.z -= nz * overlap * 0.5;
       b.x += nx * overlap * 0.5;
       b.z += nz * overlap * 0.5;
-
       a.speed *= 0.88;
       b.speed *= 0.88;
     }
@@ -215,7 +359,7 @@ function resolveCarCollisions(room) {
 
 export function createPlayerState({ id, username, spawnIndex, track }) {
   const spawn = createSpawnPoint(track, spawnIndex);
-  const progress = getEllipseProgress(track, spawn.x, spawn.z);
+  const progress = closestPointOnTrack(track, spawn.x, spawn.z)?.progress ?? 0;
 
   return {
     id,
@@ -250,7 +394,7 @@ export function createPlayerState({ id, username, spawnIndex, track }) {
 export function resetPlayersForCountdown(room, now) {
   [...room.players.values()].forEach((player, index) => {
     const spawn = createSpawnPoint(room.track, index);
-    const progress = getEllipseProgress(room.track, spawn.x, spawn.z);
+    const progress = closestPointOnTrack(room.track, spawn.x, spawn.z)?.progress ?? 0;
     player.x = spawn.x;
     player.z = spawn.z;
     player.yaw = spawn.yaw;
@@ -282,18 +426,10 @@ function rankPlayers(players) {
     if (a.completed && b.completed) {
       return sanitizeNumber(a.finishTimeMs, Infinity) - sanitizeNumber(b.finishTimeMs, Infinity);
     }
-    if (a.completed) {
-      return -1;
-    }
-    if (b.completed) {
-      return 1;
-    }
-    if (a.lap !== b.lap) {
-      return b.lap - a.lap;
-    }
-    if (a.progress !== b.progress) {
-      return b.progress - a.progress;
-    }
+    if (a.completed) return -1;
+    if (b.completed) return 1;
+    if (a.lap !== b.lap) return b.lap - a.lap;
+    if (a.progress !== b.progress) return b.progress - a.progress;
     return b.speed - a.speed;
   });
 
@@ -326,9 +462,7 @@ export function stepRoom(room, dt, now) {
 
   if (room.phase === "racing") {
     const allDone = [...room.players.values()].every((player) => player.completed);
-    const timedOutAfterFirstFinish =
-      room.firstFinishAt && now - room.firstFinishAt > 15000;
-
+    const timedOutAfterFirstFinish = room.firstFinishAt && now - room.firstFinishAt > 15000;
     if (allDone || timedOutAfterFirstFinish) {
       room.phase = "finished";
       room.finishedAt = now;
@@ -349,7 +483,6 @@ export function sanitizeInput(rawInput) {
 
 export function createRoomSnapshot(room, now) {
   const sortedPlayers = rankPlayers(room.players.values());
-
   return {
     roomCode: room.code,
     phase: room.phase,
@@ -358,7 +491,11 @@ export function createRoomSnapshot(room, now) {
     countdownMs: room.phase === "countdown" ? Math.max(0, room.countdownEndsAt - now) : 0,
     startedAt: room.startedAt,
     finishedAt: room.finishedAt,
-    track: room.track,
+    track: {
+      name: room.track.name,
+      width: room.track.width,
+      totalLength: Math.round(room.track.totalLength),
+    },
     players: sortedPlayers.map((player) => ({
       id: player.id,
       username: player.username,

@@ -1,11 +1,14 @@
-import { LAPS_TO_WIN, TRACK } from "./constants";
-
-const TWO_PI = Math.PI * 2;
+import { LAPS_TO_WIN } from "./constants";
+import {
+  confinePlayerToTrack,
+  createSpawnPoint,
+  getTrackProgress,
+} from "./track";
 
 const PHYSICS = {
-  maxForwardSpeed: 52,
+  maxForwardSpeed: 54,
   maxReverseSpeed: -16,
-  acceleration: 32,
+  acceleration: 33,
   reverseAcceleration: 18,
   brakeForce: 46,
   friction: 14,
@@ -18,42 +21,6 @@ const PHYSICS = {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
-}
-
-function progressForPosition(x, z) {
-  const angle = Math.atan2(z / TRACK.midRadiusZ, x / TRACK.midRadiusX);
-  const normalized = ((angle % TWO_PI) + TWO_PI) % TWO_PI;
-  return normalized / TWO_PI;
-}
-
-function applyTrackCollision(player) {
-  let x = player.x;
-  let z = player.z;
-
-  const outer =
-    (x * x) / (TRACK.outerRadiusX * TRACK.outerRadiusX) +
-    (z * z) / (TRACK.outerRadiusZ * TRACK.outerRadiusZ);
-
-  if (outer > 1) {
-    const scale = 1 / Math.sqrt(outer);
-    x *= scale * 0.995;
-    z *= scale * 0.995;
-    player.speed *= -0.35;
-  }
-
-  const inner =
-    (x * x) / (TRACK.innerRadiusX * TRACK.innerRadiusX) +
-    (z * z) / (TRACK.innerRadiusZ * TRACK.innerRadiusZ);
-
-  if (inner < 1) {
-    const scale = 1 / Math.sqrt(Math.max(inner, 0.0001));
-    x *= scale * 1.01;
-    z *= scale * 1.01;
-    player.speed *= -0.2;
-  }
-
-  player.x = x;
-  player.z = z;
 }
 
 function applyFriction(player, dt) {
@@ -71,9 +38,8 @@ function applyFriction(player, dt) {
 }
 
 export function createSoloRace(username) {
-  const startX = TRACK.midRadiusX - 2;
-  const startZ = 0;
-  const progress = progressForPosition(startX, startZ);
+  const spawn = createSpawnPoint(0);
+  const progress = getTrackProgress(spawn.x, spawn.z);
 
   return {
     phase: "countdown",
@@ -84,9 +50,9 @@ export function createSoloRace(username) {
     player: {
       id: "solo-player",
       username,
-      x: startX,
-      z: startZ,
-      yaw: 0,
+      x: spawn.x,
+      z: spawn.z,
+      yaw: spawn.yaw,
       speed: 0,
       lap: 0,
       progress,
@@ -154,10 +120,11 @@ export function stepSoloRace(race, controls, dt, now) {
 
   player.x += Math.sin(player.yaw) * player.speed * dt;
   player.z += Math.cos(player.yaw) * player.speed * dt;
-  applyTrackCollision(player);
 
-  const progress = progressForPosition(player.x, player.z);
-  if (player.prevProgress > 0.92 && progress < 0.1 && player.speed > 2) {
+  const trackInfo = confinePlayerToTrack(player);
+  const progress = trackInfo.progress;
+
+  if (player.prevProgress > 0.96 && progress < 0.08 && player.speed > 3) {
     const lapTime = player.lastLapStartAt ? now - player.lastLapStartAt : null;
     if (lapTime && lapTime > 1000) {
       player.bestLapMs = player.bestLapMs ? Math.min(player.bestLapMs, lapTime) : lapTime;

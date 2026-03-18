@@ -1,14 +1,5 @@
 export const LAPS_TO_WIN = 3;
 
-export const TRACK = {
-  midRadiusX: 180,
-  midRadiusZ: 90,
-  outerRadiusX: 205,
-  outerRadiusZ: 115,
-  innerRadiusX: 155,
-  innerRadiusZ: 65,
-};
-
 export const DEFAULT_CONTROLS = {
   throttle: false,
   brake: false,

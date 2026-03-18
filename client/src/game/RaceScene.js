@@ -1,17 +1,8 @@
 import * as THREE from "three";
-import { TRACK } from "./constants";
+import { TRACK_DATA, closestPointOnTrack } from "./track";
 
 function hashColor(input) {
-  const palette = [
-    0xff5a2a,
-    0x2afff1,
-    0x89ff2a,
-    0xffde2a,
-    0xff2ac3,
-    0x2a95ff,
-    0xc22aff,
-    0xffffff,
-  ];
+  const palette = [0xff5a2a, 0x2afff1, 0x89ff2a, 0xffde2a, 0xff2ac3, 0x2a95ff, 0xc22aff, 0xffffff];
   let hash = 0;
   for (let index = 0; index < input.length; index += 1) {
     hash = (hash << 5) - hash + input.charCodeAt(index);
@@ -32,59 +23,137 @@ function noise2D(x, z, seed = 1) {
   return value - Math.floor(value);
 }
 
-function buildTrackMesh() {
-  const group = new THREE.Group();
+function computeBoundaryPoints(centerline, halfWidth) {
+  const outer = [];
+  const inner = [];
+  const count = centerline.length;
 
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(1500, 1100),
-    new THREE.MeshStandardMaterial({ color: 0x0a0f19, roughness: 0.95, metalness: 0.05 })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.02;
-  group.add(ground);
+  for (let index = 0; index < count; index += 1) {
+    const prev = centerline[(index - 1 + count) % count];
+    const current = centerline[index];
+    const next = centerline[(index + 1) % count];
 
-  const trackShape = new THREE.Shape();
-  trackShape.absellipse(0, 0, TRACK.outerRadiusX, TRACK.outerRadiusZ, 0, Math.PI * 2, false, 0);
-  const innerPath = new THREE.Path();
-  innerPath.absellipse(0, 0, TRACK.innerRadiusX, TRACK.innerRadiusZ, 0, Math.PI * 2, true, 0);
-  trackShape.holes.push(innerPath);
-  const trackGeometry = new THREE.ShapeGeometry(trackShape, 120);
-  trackGeometry.rotateX(-Math.PI / 2);
+    const tx = next.x - prev.x;
+    const tz = next.z - prev.z;
+    const length = Math.hypot(tx, tz) || 1;
+    const tangentX = tx / length;
+    const tangentZ = tz / length;
+    const normalX = -tangentZ;
+    const normalZ = tangentX;
 
-  const trackMesh = new THREE.Mesh(
-    trackGeometry,
-    new THREE.MeshStandardMaterial({ color: 0x2a313d, roughness: 0.8, metalness: 0.2 })
-  );
-  trackMesh.position.y = 0.01;
-  group.add(trackMesh);
-
-  const infield = new THREE.Mesh(
-    new THREE.CylinderGeometry(TRACK.innerRadiusX * 0.96, TRACK.innerRadiusX * 0.96, 0.08, 60, 1),
-    new THREE.MeshStandardMaterial({ color: 0x123821, roughness: 0.9 })
-  );
-  infield.scale.z = TRACK.innerRadiusZ / TRACK.innerRadiusX;
-  infield.position.y = 0.03;
-  group.add(infield);
-
-  const lineMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
-  for (let index = 0; index < 84; index += 1) {
-    const t = (index / 84) * Math.PI * 2;
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.03, 0.35), lineMaterial);
-    stripe.position.set(
-      Math.cos(t) * ((TRACK.outerRadiusX + TRACK.innerRadiusX) * 0.5),
-      0.05,
-      Math.sin(t) * ((TRACK.outerRadiusZ + TRACK.innerRadiusZ) * 0.5)
-    );
-    stripe.rotation.y = -t;
-    group.add(stripe);
+    outer.push({
+      x: current.x + normalX * halfWidth,
+      z: current.z + normalZ * halfWidth,
+    });
+    inner.push({
+      x: current.x - normalX * halfWidth,
+      z: current.z - normalZ * halfWidth,
+    });
   }
 
-  // Finish line near spawn.
-  const finishLine = new THREE.Mesh(
-    new THREE.BoxGeometry(0.8, 0.04, 52),
-    new THREE.MeshStandardMaterial({ color: 0xf4f4f4, emissive: 0x262626, emissiveIntensity: 0.2 })
+  return { outer, inner };
+}
+
+function buildTrackMesh() {
+  const group = new THREE.Group();
+  const { minX, maxX, minZ, maxZ } = TRACK_DATA.bounds;
+  const planeWidth = maxX - minX + 500;
+  const planeHeight = maxZ - minZ + 500;
+
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(planeWidth, planeHeight),
+    new THREE.MeshStandardMaterial({ color: 0x080e18, roughness: 0.95, metalness: 0.05 })
   );
-  finishLine.position.set(TRACK.midRadiusX - 2, 0.06, 0);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.03;
+  ground.receiveShadow = true;
+  group.add(ground);
+
+  const { outer, inner } = computeBoundaryPoints(TRACK_DATA.centerline, TRACK_DATA.halfWidth);
+  const roadShape = new THREE.Shape();
+  roadShape.moveTo(outer[0].x, outer[0].z);
+  for (let index = 1; index < outer.length; index += 1) {
+    roadShape.lineTo(outer[index].x, outer[index].z);
+  }
+  roadShape.lineTo(outer[0].x, outer[0].z);
+
+  const hole = new THREE.Path();
+  const reversedInner = [...inner].reverse();
+  hole.moveTo(reversedInner[0].x, reversedInner[0].z);
+  for (let index = 1; index < reversedInner.length; index += 1) {
+    hole.lineTo(reversedInner[index].x, reversedInner[index].z);
+  }
+  hole.lineTo(reversedInner[0].x, reversedInner[0].z);
+  roadShape.holes.push(hole);
+
+  const roadGeometry = new THREE.ShapeGeometry(roadShape, 3);
+  roadGeometry.rotateX(-Math.PI / 2);
+  const road = new THREE.Mesh(
+    roadGeometry,
+    new THREE.MeshStandardMaterial({
+      color: 0x2f3642,
+      roughness: 0.82,
+      metalness: 0.15,
+    })
+  );
+  road.position.y = 0.01;
+  road.receiveShadow = true;
+  group.add(road);
+
+  const curbMaterialA = new THREE.MeshStandardMaterial({ color: 0xf6f6f6, roughness: 0.5 });
+  const curbMaterialB = new THREE.MeshStandardMaterial({ color: 0xd5372a, roughness: 0.5 });
+
+  for (let index = 0; index < TRACK_DATA.centerline.length; index += 8) {
+    const current = TRACK_DATA.centerline[index];
+    const next = TRACK_DATA.centerline[(index + 1) % TRACK_DATA.centerline.length];
+    const tx = next.x - current.x;
+    const tz = next.z - current.z;
+    const length = Math.hypot(tx, tz) || 1;
+    const tangentX = tx / length;
+    const tangentZ = tz / length;
+    const normalX = -tangentZ;
+    const normalZ = tangentX;
+    const yaw = Math.atan2(tangentX, tangentZ);
+    const curbMaterial = Math.floor(index / 8) % 2 === 0 ? curbMaterialA : curbMaterialB;
+
+    const outerCurb = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.24, 2.8), curbMaterial);
+    outerCurb.position.set(
+      current.x + normalX * (TRACK_DATA.halfWidth + 2.5),
+      0.12,
+      current.z + normalZ * (TRACK_DATA.halfWidth + 2.5)
+    );
+    outerCurb.rotation.y = yaw;
+    group.add(outerCurb);
+
+    const innerCurb = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.24, 2.8), curbMaterial);
+    innerCurb.position.set(
+      current.x - normalX * (TRACK_DATA.halfWidth + 2.5),
+      0.12,
+      current.z - normalZ * (TRACK_DATA.halfWidth + 2.5)
+    );
+    innerCurb.rotation.y = yaw;
+    group.add(innerCurb);
+  }
+
+  const laneMarkerMaterial = new THREE.MeshStandardMaterial({ color: 0xe6ecf5, roughness: 0.35 });
+  const laneMarkerCount = Math.max(130, Math.floor(TRACK_DATA.totalLength / 24));
+  for (let markerIndex = 0; markerIndex < laneMarkerCount; markerIndex += 1) {
+    const sampleIndex = Math.floor((markerIndex / laneMarkerCount) * TRACK_DATA.centerline.length);
+    const current = TRACK_DATA.centerline[sampleIndex];
+    const next = TRACK_DATA.centerline[(sampleIndex + 1) % TRACK_DATA.centerline.length];
+    const yaw = Math.atan2(next.x - current.x, next.z - current.z);
+    const marker = new THREE.Mesh(new THREE.BoxGeometry(3, 0.03, 0.35), laneMarkerMaterial);
+    marker.position.set(current.x, 0.05, current.z);
+    marker.rotation.y = yaw;
+    group.add(marker);
+  }
+
+  const finishLine = new THREE.Mesh(
+    new THREE.BoxGeometry(0.9, 0.04, TRACK_DATA.width + 10),
+    new THREE.MeshStandardMaterial({ color: 0xf4f4f4, emissive: 0x222222, emissiveIntensity: 0.35 })
+  );
+  finishLine.position.set(TRACK_DATA.startPoint.x, 0.06, TRACK_DATA.startPoint.z);
+  finishLine.rotation.y = Math.atan2(TRACK_DATA.startNormal.x, TRACK_DATA.startNormal.z);
   group.add(finishLine);
 
   return group;
@@ -92,65 +161,60 @@ function buildTrackMesh() {
 
 function buildCity() {
   const city = new THREE.Group();
-  const spanX = 620;
-  const spanZ = 430;
-  const step = 55;
-  const safeRadiusX = TRACK.outerRadiusX + 65;
-  const safeRadiusZ = TRACK.outerRadiusZ + 65;
+  const { minX, maxX, minZ, maxZ } = TRACK_DATA.bounds;
+  const margin = 260;
+  const step = 70;
 
-  for (let gx = -spanX; gx <= spanX; gx += step) {
-    for (let gz = -spanZ; gz <= spanZ; gz += step) {
-      const normalized =
-        (gx * gx) / (safeRadiusX * safeRadiusX) + (gz * gz) / (safeRadiusZ * safeRadiusZ);
-      if (normalized < 1) {
+  for (let gx = minX - margin; gx <= maxX + margin; gx += step) {
+    for (let gz = minZ - margin; gz <= maxZ + margin; gz += step) {
+      const trackDistance = closestPointOnTrack(gx, gz)?.distance ?? 9999;
+      if (trackDistance < TRACK_DATA.width * 1.9) {
         continue;
       }
 
-      const randA = noise2D(gx * 0.03, gz * 0.03, 1);
-      const randB = noise2D(gx * 0.04, gz * 0.05, 2);
-      const randC = noise2D(gx * 0.06, gz * 0.02, 3);
+      const randA = noise2D(gx * 0.02, gz * 0.02, 1);
+      const randB = noise2D(gx * 0.03, gz * 0.04, 2);
+      const randC = noise2D(gx * 0.05, gz * 0.01, 3);
+      const width = 18 + randA * 18;
+      const depth = 18 + randB * 18;
+      const height = 26 + randC * 210;
+      const offsetX = (randA - 0.5) * 18;
+      const offsetZ = (randB - 0.5) * 18;
 
-      const width = 16 + randA * 16;
-      const depth = 16 + randB * 16;
-      const height = 24 + randC * 170;
-      const offsetX = (randA - 0.5) * 10;
-      const offsetZ = (randB - 0.5) * 10;
-
-      const buildingColor = new THREE.Color().setHSL(0.56 + randA * 0.06, 0.38, 0.16 + randB * 0.1);
       const building = new THREE.Mesh(
         new THREE.BoxGeometry(width, height, depth),
         new THREE.MeshStandardMaterial({
-          color: buildingColor,
+          color: new THREE.Color().setHSL(0.56 + randA * 0.05, 0.38, 0.12 + randB * 0.14),
           roughness: 0.9,
           metalness: 0.2,
-          emissive: new THREE.Color(0x07111f),
-          emissiveIntensity: 0.45,
+          emissive: new THREE.Color(0x061322),
+          emissiveIntensity: 0.35,
         })
       );
-      building.position.set(gx + offsetX, height / 2, gz + offsetZ);
+      building.position.set(gx + offsetX, height * 0.5, gz + offsetZ);
       building.castShadow = true;
       building.receiveShadow = true;
       city.add(building);
     }
   }
 
-  for (let index = 0; index < 36; index += 1) {
-    const t = (index / 36) * Math.PI * 2;
-    const lightRadiusX = TRACK.outerRadiusX + 28;
-    const lightRadiusZ = TRACK.outerRadiusZ + 28;
-    const x = Math.cos(t) * lightRadiusX;
-    const z = Math.sin(t) * lightRadiusZ;
+  const lampCount = 80;
+  const ringRadius = (TRACK_DATA.bounds.maxX - TRACK_DATA.bounds.minX) * 0.65;
+  for (let index = 0; index < lampCount; index += 1) {
+    const t = (index / lampCount) * Math.PI * 2;
+    const x = Math.cos(t) * ringRadius;
+    const z = Math.sin(t) * ringRadius * 0.72;
 
     const pole = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.6, 0.8, 12, 10),
+      new THREE.CylinderGeometry(0.6, 0.8, 14, 10),
       new THREE.MeshStandardMaterial({ color: 0x2a2f37, roughness: 0.7 })
     );
-    pole.position.set(x, 6, z);
+    pole.position.set(x, 7, z);
     pole.castShadow = true;
     city.add(pole);
 
-    const lamp = new THREE.PointLight(0x4cf8ff, 1.1, 90, 1.6);
-    lamp.position.set(x, 12, z);
+    const lamp = new THREE.PointLight(0x4cf8ff, 0.85, 95, 1.8);
+    lamp.position.set(x, 14, z);
     city.add(lamp);
   }
 
@@ -232,9 +296,9 @@ export class RaceScene {
   constructor(container) {
     this.container = container;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x08121f);
-    this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 2500);
-    this.camera.position.set(0, 12, -24);
+    this.scene.background = new THREE.Color(0x06101d);
+    this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 4200);
+    this.camera.position.set(0, 13, -28);
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
@@ -246,7 +310,7 @@ export class RaceScene {
     this.clock = new THREE.Clock();
     this.rafId = null;
     this.targetLookAt = new THREE.Vector3(0, 0, 0);
-    this.tempCameraOffset = new THREE.Vector3(0, 10, -20);
+    this.tempCameraOffset = new THREE.Vector3(0, 12, -24);
     this.upVector = new THREE.Vector3(0, 1, 0);
 
     this.setupLights();
@@ -260,32 +324,31 @@ export class RaceScene {
   }
 
   setupLights() {
-    const hemi = new THREE.HemisphereLight(0x7bd6ff, 0x0f2614, 0.55);
+    const hemi = new THREE.HemisphereLight(0x7bd6ff, 0x0f2614, 0.56);
     this.scene.add(hemi);
 
     const directional = new THREE.DirectionalLight(0xffffff, 1.05);
-    directional.position.set(32, 52, -16);
+    directional.position.set(80, 100, -30);
     directional.castShadow = true;
     directional.shadow.mapSize.width = 2048;
     directional.shadow.mapSize.height = 2048;
     directional.shadow.camera.near = 0.5;
-    directional.shadow.camera.far = 200;
-    directional.shadow.camera.left = -90;
-    directional.shadow.camera.right = 90;
-    directional.shadow.camera.top = 90;
-    directional.shadow.camera.bottom = -90;
+    directional.shadow.camera.far = 1200;
+    directional.shadow.camera.left = -350;
+    directional.shadow.camera.right = 350;
+    directional.shadow.camera.top = 350;
+    directional.shadow.camera.bottom = -350;
     this.scene.add(directional);
   }
 
   setupWorld() {
-    const track = buildTrackMesh();
-    this.scene.add(track);
+    this.scene.add(buildTrackMesh());
     this.scene.add(buildCity());
 
     const skyDome = new THREE.Mesh(
-      new THREE.SphereGeometry(1200, 36, 24),
+      new THREE.SphereGeometry(3200, 36, 24),
       new THREE.MeshBasicMaterial({
-        color: 0x152840,
+        color: 0x14263d,
         side: THREE.BackSide,
       })
     );
@@ -370,7 +433,6 @@ export class RaceScene {
         body.material.emissiveIntensity = emissiveIntensity;
       }
 
-      // Small hover effect to keep placeholder cars lively.
       const bob = Math.sin(performance.now() * 0.002 + visual.root.position.x * 0.1) * 0.02;
       visual.car.position.y = bob;
     });
@@ -388,14 +450,14 @@ export class RaceScene {
       return;
     }
 
-    this.tempCameraOffset.set(0, 10, -20);
+    this.tempCameraOffset.set(0, 12, -24);
     this.tempCameraOffset.applyAxisAngle(this.upVector, targetVisual.currentYaw);
 
     const desiredPosition = targetVisual.root.position.clone().add(this.tempCameraOffset);
     const lerpFactor = 1 - Math.exp(-delta * 6);
     this.camera.position.lerp(desiredPosition, lerpFactor);
 
-    this.targetLookAt.copy(targetVisual.root.position).add(new THREE.Vector3(0, 1.8, 0));
+    this.targetLookAt.copy(targetVisual.root.position).add(new THREE.Vector3(0, 2, 0));
     this.camera.lookAt(this.targetLookAt);
   }
 
