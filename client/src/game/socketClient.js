@@ -2,32 +2,30 @@ import { io } from "socket.io-client";
 
 let socketInstance = null;
 
-function resolveServerUrl() {
-  if (import.meta.env.VITE_SERVER_URL) {
-    return import.meta.env.VITE_SERVER_URL;
-  }
-
-  if (typeof window !== "undefined") {
-    const protocol = window.location.protocol;
-    const hostname = window.location.hostname;
-    const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
-    if (isLocal) {
-      return `${protocol}//${hostname}:4000`;
-    }
-
-    return `${protocol}//${hostname}`;
-  }
-
-  return "http://localhost:4000";
-}
+const SOCKET_SERVER_URL = "https://rao-racing-server.onrender.com";
 
 export function getSocket() {
   if (!socketInstance) {
-    socketInstance = io(resolveServerUrl(), {
+    socketInstance = io(SOCKET_SERVER_URL, {
+      transports: ["websocket"],
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 15,
-      timeout: 6000,
+      timeout: 10000,
+    });
+
+    socketInstance.on("connect", () => {
+      console.info(`[socket] connected: ${socketInstance.id}`);
+    });
+
+    socketInstance.on("connect_error", (error) => {
+      console.error("[socket] connect_error:", error.message, {
+        url: SOCKET_SERVER_URL,
+      });
+    });
+
+    socketInstance.on("disconnect", (reason) => {
+      console.warn("[socket] disconnected:", reason);
     });
   }
 

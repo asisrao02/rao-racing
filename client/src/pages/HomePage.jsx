@@ -5,7 +5,7 @@ import PrimaryButton from "../components/PrimaryButton";
 import { useGame } from "../game/GameContext";
 
 function serverBaseUrl() {
-  return import.meta.env.VITE_SERVER_URL || "http://localhost:4000";
+  return import.meta.env.VITE_SERVER_URL || "https://rao-racing-server.onrender.com";
 }
 
 function formatBestLap(ms) {

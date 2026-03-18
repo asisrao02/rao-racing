@@ -10,26 +10,26 @@ import { RaceResult } from "./src/models/RaceResult.js";
 const app = express();
 const server = http.createServer(app);
 
-const CLIENT_URLS = [
+const PORT = process.env.PORT || 4000;
+const MONGO_URI = process.env.MONGO_URI || "";
+
+const ALLOWED_ORIGINS = [
+  "https://rao-racing.vercel.app",
   "http://localhost:5173",
-  "https://rao-racing.vercel.app"
 ];
-
-const LOCAL_ORIGIN_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-
-function isAllowedOrigin(origin) {
-  if (!origin) {
-    return true;
-  }
-  return CLIENT_URLS.includes(origin) || LOCAL_ORIGIN_REGEX.test(origin);
-}
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      callback(null, isAllowedOrigin(origin));
+      // Allow same-origin/server-to-server calls with no browser Origin header.
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
+    methods: ["GET", "POST", "OPTIONS"],
   })
 );
 app.use(express.json());
@@ -67,6 +67,15 @@ app.get("/api/leaderboard", async (_req, res) => {
     console.error("Leaderboard fetch failed:", error.message);
     res.status(500).json({ leaders: [] });
   }
+});
+
+app.use((error, _req, res, next) => {
+  if (error?.message?.startsWith("CORS blocked")) {
+    console.error(error.message);
+    res.status(403).json({ error: "CORS origin not allowed" });
+    return;
+  }
+  next(error);
 });
 
 function normalizeUsername(username) {
@@ -139,10 +148,7 @@ async function persistRaceResults(room) {
   });
 }
 
-setupSocket(server, {
-  clientOrigins: CLIENT_URLS,
-  onRaceFinished: persistRaceResults,
-});
+setupSocket(server, { onRaceFinished: persistRaceResults });
 
 async function bootstrap() {
   if (MONGO_URI) {
@@ -157,7 +163,7 @@ async function bootstrap() {
   }
 
   server.listen(PORT, () => {
-    console.log(`RAO RACING server listening on http://localhost:${PORT}`);
+    console.log(`RAO RACING server listening on port ${PORT}`);
   });
 }
 

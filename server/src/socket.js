@@ -152,23 +152,20 @@ function restartToLobby(io, room) {
 }
 
 export function setupSocket(server, options = {}) {
-  const allowedOrigins = options.clientOrigins || [];
-  const localOriginRegex = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-
   const io = new Server(server, {
     cors: {
-      origin: (origin, callback) => {
-        if (!origin) {
-          callback(null, true);
-          return;
-        }
-
-        const allowed = allowedOrigins.includes(origin) || localOriginRegex.test(origin);
-        callback(null, allowed);
-      },
+      origin: "*",
       methods: ["GET", "POST"],
-      credentials: true,
     },
+  });
+
+  io.engine.on("connection_error", (error) => {
+    console.error("[socket] connection_error:", {
+      code: error.code,
+      message: error.message,
+      origin: error.context?.origin,
+      transport: error.context?.transport,
+    });
   });
 
   io.on("connection", (socket) => {
