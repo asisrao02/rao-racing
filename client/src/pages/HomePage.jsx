@@ -85,11 +85,11 @@ function HomePage() {
     <main className="app-bg relative overflow-hidden px-4 py-8 md:px-8 md:py-12">
       <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <Panel className="space-y-6">
-          <p className="font-display text-sm uppercase tracking-[0.22em] text-cyan-200/85">Browser Multiplayer Racing</p>
+          <p className="font-display text-sm uppercase tracking-[0.22em] text-cyan-200/85">Browser Multiplayer Kart Battle</p>
           <h1 className="font-display text-5xl font-black tracking-[0.08em] text-white md:text-7xl">RAO RACING</h1>
           <p className="max-w-xl text-lg text-cyan-100/90">
-            Fast, competitive, real-time racing with lobbies, live rankings, 3-lap races, nitro boosts, and smooth
-            camera follow.
+            Smash-style real-time kart combat on a massive Neo City GP circuit with lobbies, ammo pickups, projectile
+            fights, nitro boosts, and smooth third-person camera follow.
           </p>
 
           <div className="flex flex-wrap gap-3">

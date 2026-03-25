@@ -19,19 +19,27 @@ function MobileControls({ onControl }) {
       <div className="flex items-end justify-between gap-3">
         <div className="pointer-events-auto flex flex-col gap-2">
           <div className="flex gap-2">
-            <ControlButton label="◀" onPress={() => onControl("left", true)} onRelease={() => onControl("left", false)} />
+            <ControlButton label="LEFT" onPress={() => onControl("left", true)} onRelease={() => onControl("left", false)} />
             <ControlButton
-              label="▶"
+              label="RIGHT"
               onPress={() => onControl("right", true)}
               onRelease={() => onControl("right", false)}
             />
           </div>
-          <ControlButton
-            label="NITRO"
-            className="text-base tracking-[0.08em]"
-            onPress={() => onControl("nitro", true)}
-            onRelease={() => onControl("nitro", false)}
-          />
+          <div className="flex gap-2">
+            <ControlButton
+              label="NITRO"
+              className="text-base tracking-[0.08em]"
+              onPress={() => onControl("nitro", true)}
+              onRelease={() => onControl("nitro", false)}
+            />
+            <ControlButton
+              label="FIRE"
+              className="bg-red-500/50 text-white tracking-[0.08em]"
+              onPress={() => onControl("fire", true)}
+              onRelease={() => onControl("fire", false)}
+            />
+          </div>
         </div>
 
         <div className="pointer-events-auto flex flex-col gap-2">

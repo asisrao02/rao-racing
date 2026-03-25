@@ -95,11 +95,21 @@ async function persistRaceResults(room) {
         return placeA - placeB;
       }
 
-      if (a.lap !== b.lap) {
-        return b.lap - a.lap;
+      if (typeof a.score === "number" || typeof b.score === "number") {
+        if ((a.score ?? 0) !== (b.score ?? 0)) {
+          return (b.score ?? 0) - (a.score ?? 0);
+        }
+        if ((a.kills ?? 0) !== (b.kills ?? 0)) {
+          return (b.kills ?? 0) - (a.kills ?? 0);
+        }
+        return (a.deaths ?? 0) - (b.deaths ?? 0);
       }
 
-      return b.progress - a.progress;
+      if ((a.lap ?? 0) !== (b.lap ?? 0)) {
+        return (b.lap ?? 0) - (a.lap ?? 0);
+      }
+
+      return (b.progress ?? 0) - (a.progress ?? 0);
     })
     .map((player, index) => ({
       username: player.username,
@@ -107,6 +117,9 @@ async function persistRaceResults(room) {
       finishTimeMs: player.finishTimeMs ?? null,
       bestLapMs: player.bestLapMs ?? null,
       lap: player.lap ?? 0,
+      score: player.score ?? 0,
+      kills: player.kills ?? 0,
+      deaths: player.deaths ?? 0,
     }));
 
   if (!players.length) {

@@ -5,7 +5,7 @@ import HudOverlay from "../components/HudOverlay";
 import MobileControls from "../components/MobileControls";
 import PrimaryButton from "../components/PrimaryButton";
 import { useGame } from "../game/GameContext";
-import { DEFAULT_CONTROLS, KEY_TO_CONTROL, LAPS_TO_WIN } from "../game/constants";
+import { DEFAULT_CONTROLS, KEY_TO_CONTROL } from "../game/constants";
 import { EngineAudio } from "../game/engineAudio";
 import { getSoloSnapshot, createSoloRace, stepSoloRace } from "../game/physics";
 import { RaceScene } from "../game/RaceScene";
@@ -16,10 +16,30 @@ function buildHudFromSnapshot(snapshot, currentPlayerId) {
   const fallbackPlayer = leaderboard[0];
   const localPlayer = players.find((player) => player.id === currentPlayerId) || fallbackPlayer;
 
+  if (snapshot?.arena) {
+    return {
+      battleMode: true,
+      speed: Math.abs(localPlayer?.speed ?? 0) * 3.6,
+      position: localPlayer?.rank ?? 1,
+      totalPlayers: players.length || 1,
+      nitro: localPlayer?.nitro ?? 0,
+      leaderboard,
+      hp: localPlayer?.hp ?? 0,
+      ammo: localPlayer?.ammo ?? 0,
+      score: localPlayer?.score ?? 0,
+      kills: localPlayer?.kills ?? 0,
+      deaths: localPlayer?.deaths ?? 0,
+      timeLeftMs: snapshot?.timeLeftMs ?? 0,
+      respawnInMs: localPlayer?.respawnInMs ?? 0,
+      isBoosting: Boolean(localPlayer?.isBoosting),
+    };
+  }
+
   return {
+    battleMode: false,
     speed: Math.abs(localPlayer?.speed ?? 0) * 3.6,
-    lap: localPlayer?.lap ?? 0,
-    lapsToWin: snapshot?.lapsToWin ?? LAPS_TO_WIN,
+    lap: 0,
+    lapsToWin: 0,
     position: localPlayer?.rank ?? 1,
     totalPlayers: players.length || 1,
     nitro: localPlayer?.nitro ?? 0,
@@ -62,13 +82,21 @@ function GamePage() {
   const engineAudioRef = useRef(null);
   const goUntilRef = useRef(0);
   const [hud, setHud] = useState({
+    battleMode: true,
     speed: 0,
     lap: 0,
-    lapsToWin: LAPS_TO_WIN,
+    lapsToWin: 0,
     position: 1,
     totalPlayers: 1,
     nitro: 100,
     leaderboard: [],
+    hp: 100,
+    ammo: 0,
+    score: 0,
+    kills: 0,
+    deaths: 0,
+    timeLeftMs: 0,
+    respawnInMs: 0,
     isBoosting: false,
   });
   const [countdownText, setCountdownText] = useState("");
@@ -180,7 +208,7 @@ function GamePage() {
 
     const currentPlayerId = playerId || ensureSocket().id;
     sceneRef.current?.setLocalPlayer(currentPlayerId);
-    sceneRef.current?.setSnapshot(roomState.players || []);
+    sceneRef.current?.setSnapshot(roomState);
 
     const nextHud = buildHudFromSnapshot(roomState, currentPlayerId);
     setHud(nextHud);
@@ -234,7 +262,7 @@ function GamePage() {
       stepSoloRace(race, controlsRef.current, dt, Date.now());
       const snapshot = getSoloSnapshot(race);
       sceneRef.current?.setLocalPlayer("solo-player");
-      sceneRef.current?.setSnapshot(snapshot.players);
+      sceneRef.current?.setSnapshot(snapshot);
 
       hudAccumulator += dt;
       if (hudAccumulator > 0.05) {
@@ -309,6 +337,7 @@ function GamePage() {
       </div>
 
       <HudOverlay
+        battleMode={hud.battleMode}
         speed={hud.speed}
         lap={hud.lap}
         lapsToWin={hud.lapsToWin}
@@ -316,6 +345,13 @@ function GamePage() {
         totalPlayers={hud.totalPlayers}
         nitro={hud.nitro}
         leaderboard={hud.leaderboard}
+        hp={hud.hp}
+        ammo={hud.ammo}
+        score={hud.score}
+        kills={hud.kills}
+        deaths={hud.deaths}
+        timeLeftMs={hud.timeLeftMs}
+        respawnInMs={hud.respawnInMs}
       />
       <CountdownBanner text={countdownText} />
 

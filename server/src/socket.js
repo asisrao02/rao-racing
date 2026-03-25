@@ -63,14 +63,14 @@ function leaveRoom(io, socket) {
 
   if ((room.phase === "countdown" || room.phase === "racing") && room.players.size === 1) {
     const lonePlayer = [...room.players.values()][0];
-    if (room.phase === "racing" && !lonePlayer.completed) {
-      lonePlayer.completed = true;
-      lonePlayer.finishTimeMs = room.startedAt ? Date.now() - room.startedAt : 0;
+    if (room.phase === "racing") {
+      lonePlayer.score += 30;
       lonePlayer.place = 1;
-      room.finishedOrder = [lonePlayer.id];
+      lonePlayer.matchFinalized = true;
     }
     room.phase = "finished";
     room.finishedAt = Date.now();
+    room.battleEndsAt = room.finishedAt;
   }
 
   emitRoomState(io, room);
@@ -78,16 +78,18 @@ function leaveRoom(io, socket) {
 
 function createRoomForSocket(io, socket, username) {
   const roomCode = createRoomCode(rooms);
-  const track = createTrack();
+  const arena = createTrack();
   const room = {
     code: roomCode,
     phase: "lobby",
     hostId: socket.id,
     lapsToWin: LAPS_TO_WIN,
-    track,
+    arena,
     players: new Map(),
-    finishedOrder: [],
-    firstFinishAt: null,
+    projectiles: [],
+    pickups: [],
+    matchDurationMs: 180000,
+    battleEndsAt: null,
     startedAt: null,
     finishedAt: null,
     countdownEndsAt: null,
@@ -99,7 +101,7 @@ function createRoomForSocket(io, socket, username) {
     id: socket.id,
     username,
     spawnIndex: 0,
-    track,
+    track: arena,
   });
 
   room.players.set(socket.id, player);
@@ -116,7 +118,7 @@ function joinRoom(io, socket, room, username) {
     id: socket.id,
     username,
     spawnIndex,
-    track: room.track,
+    track: room.arena,
   });
 
   room.players.set(socket.id, player);
@@ -131,8 +133,7 @@ function startRace(io, room) {
   room.countdownEndsAt = now + 3000;
   room.startedAt = null;
   room.finishedAt = null;
-  room.finishedOrder = [];
-  room.firstFinishAt = null;
+  room.battleEndsAt = null;
   room.persisted = false;
   resetPlayersForCountdown(room, now);
   emitRoomState(io, room, now);
@@ -144,8 +145,8 @@ function restartToLobby(io, room) {
   room.countdownEndsAt = null;
   room.startedAt = null;
   room.finishedAt = null;
-  room.finishedOrder = [];
-  room.firstFinishAt = null;
+  room.battleEndsAt = null;
+  room.projectiles = [];
   room.persisted = false;
   resetPlayersForCountdown(room, now);
   emitRoomState(io, room, now);

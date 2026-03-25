@@ -43,6 +43,7 @@ function ResultPage() {
       return placeA - placeB;
     });
   }, [finalData]);
+  const isBattleResult = rows.some((player) => typeof player.score === "number");
 
   useEffect(() => {
     if (!finalData) {
@@ -116,7 +117,9 @@ function ResultPage() {
     <main className="app-bg relative min-h-screen px-4 py-8 md:px-8 md:py-12">
       <div className="relative z-10 mx-auto w-full max-w-4xl space-y-5">
         <Panel className="space-y-2 text-center">
-          <p className="font-display text-sm uppercase tracking-[0.16em] text-cyan-200/85">Race Complete</p>
+          <p className="font-display text-sm uppercase tracking-[0.16em] text-cyan-200/85">
+            {isBattleResult ? "Battle Complete" : "Race Complete"}
+          </p>
           <h1 className="font-display text-5xl text-white md:text-6xl">FINAL LEADERBOARD</h1>
           <p className="text-cyan-100/85">
             Room: <span className="font-display tracking-[0.1em]">{finalData.roomCode || "SOLO"}</span>
@@ -128,18 +131,31 @@ function ResultPage() {
             {rows.map((player, index) => (
               <div
                 key={player.id || `${player.username}-${index}`}
-                className="grid grid-cols-[0.5fr_1.5fr_1fr_1fr] items-center rounded-lg border border-cyan-300/20 bg-slate-900/55 px-3 py-3 text-sm md:text-base"
+                className={`grid items-center rounded-lg border border-cyan-300/20 bg-slate-900/55 px-3 py-3 text-sm md:text-base ${
+                  isBattleResult ? "grid-cols-[0.5fr_1.6fr_1fr_1fr]" : "grid-cols-[0.5fr_1.5fr_1fr_1fr]"
+                }`}
               >
                 <p className="font-display text-white">{player.place || index + 1}</p>
                 <p className="truncate text-white">{player.username}</p>
-                <p className="text-cyan-100">{formatTime(player.finishTimeMs)}</p>
-                <p className="text-cyan-200">{formatTime(player.bestLapMs)}</p>
+                {isBattleResult ? (
+                  <>
+                    <p className="text-cyan-100">{player.score ?? 0} pts</p>
+                    <p className="text-cyan-200">
+                      {player.kills ?? 0}/{player.deaths ?? 0}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-cyan-100">{formatTime(player.finishTimeMs)}</p>
+                    <p className="text-cyan-200">{formatTime(player.bestLapMs)}</p>
+                  </>
+                )}
               </div>
             ))}
           </div>
 
           <div className="mt-5 flex flex-wrap gap-3">
-            <PrimaryButton onClick={restart}>{mode === "multiplayer" ? "Restart Lobby" : "Race Again"}</PrimaryButton>
+            <PrimaryButton onClick={restart}>{mode === "multiplayer" ? "Restart Lobby" : "Play Again"}</PrimaryButton>
             <PrimaryButton variant="secondary" onClick={exit}>
               Exit To Home
             </PrimaryButton>

@@ -6,6 +6,7 @@ export const DEFAULT_CONTROLS = {
   left: false,
   right: false,
   nitro: false,
+  fire: false,
 };
 
 export const KEY_TO_CONTROL = {
@@ -19,5 +20,6 @@ export const KEY_TO_CONTROL = {
   ArrowRight: "right",
   ShiftLeft: "nitro",
   ShiftRight: "nitro",
-  Space: "nitro",
+  Space: "fire",
+  KeyF: "fire",
 };

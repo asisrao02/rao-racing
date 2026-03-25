@@ -114,7 +114,7 @@ function LobbyPage() {
       }
       handled = true;
       setBusy(false);
-      setMessage("Server did not respond. Confirm backend is running on port 4000.");
+      setMessage("Server did not respond. Confirm your Render backend is online.");
     }, 7000);
 
     socket.emit(eventName, payload, (response) => {
@@ -128,59 +128,98 @@ function LobbyPage() {
     });
   };
 
-  const createRoom = () => {
-    if (!socket.connected) {
-      socket.connect();
-      setMessage("Connecting to server... please try again in a second.");
+  const runWhenConnected = (onReady) => {
+    if (socket.connected) {
+      onReady();
       return;
     }
 
-    emitWithTimeout("room:create", { username }, (response) => {
-      if (!response?.ok) {
-        setMessage(response?.error || "Unable to create room.");
+    setBusy(true);
+    setMessage("Connecting to server...");
+    socket.connect();
+
+    let done = false;
+    const cleanup = () => {
+      socket.off("connect", handleConnect);
+      socket.off("connect_error", handleConnectError);
+      clearTimeout(timeoutId);
+    };
+
+    const handleConnect = () => {
+      if (done) {
         return;
       }
-      setPlayerId(response.playerId);
-      setRoomCode(response.roomCode);
-      setMessage(`Room ${response.roomCode} created. Share the code and wait for racers.`);
+      done = true;
+      cleanup();
+      setBusy(false);
+      onReady();
+    };
+
+    const handleConnectError = (error) => {
+      if (done) {
+        return;
+      }
+      done = true;
+      cleanup();
+      setBusy(false);
+      setMessage(`Server connection failed: ${error.message}`);
+    };
+
+    const timeoutId = setTimeout(() => {
+      if (done) {
+        return;
+      }
+      done = true;
+      cleanup();
+      setBusy(false);
+      setMessage("Unable to reach server. Check Render status and retry.");
+    }, 9000);
+
+    socket.once("connect", handleConnect);
+    socket.once("connect_error", handleConnectError);
+  };
+
+  const createRoom = () => {
+    runWhenConnected(() => {
+      emitWithTimeout("room:create", { username }, (response) => {
+        if (!response?.ok) {
+          setMessage(response?.error || "Unable to create room.");
+          return;
+        }
+        setPlayerId(response.playerId);
+        setRoomCode(response.roomCode);
+        setMessage(`Room ${response.roomCode} created. Share the code and wait for racers.`);
+      });
     });
   };
 
   const joinRoom = () => {
-    if (!socket.connected) {
-      socket.connect();
-      setMessage("Connecting to server... please try again in a second.");
-      return;
-    }
-
     const nextCode = joinCode.trim().toUpperCase();
     if (!nextCode) {
       setMessage("Enter a room code first.");
       return;
     }
 
-    emitWithTimeout("room:join", { roomCode: nextCode, username }, (response) => {
-      if (!response?.ok) {
-        setMessage(response?.error || "Unable to join room.");
-        return;
-      }
-      setPlayerId(response.playerId);
-      setRoomCode(response.roomCode);
-      setMessage(`Joined room ${response.roomCode}.`);
+    runWhenConnected(() => {
+      emitWithTimeout("room:join", { roomCode: nextCode, username }, (response) => {
+        if (!response?.ok) {
+          setMessage(response?.error || "Unable to join room.");
+          return;
+        }
+        setPlayerId(response.playerId);
+        setRoomCode(response.roomCode);
+        setMessage(`Joined room ${response.roomCode}.`);
+      });
     });
   };
 
   const startRace = () => {
-    if (!socket.connected) {
-      socket.connect();
-      setMessage("Connecting to server... please try again.");
-      return;
-    }
-
-    emitWithTimeout("race:start", {}, (response) => {
-      if (!response?.ok) {
-        setMessage(response?.error || "Unable to start race.");
-      }
+    runWhenConnected(() => {
+      emitWithTimeout("race:start", {}, (response) => {
+        if (!response?.ok) {
+          setMessage(response?.error || "Unable to start race.");
+        }
+      });
     });
   };
 
@@ -274,7 +313,10 @@ function LobbyPage() {
             <li>W / Arrow Up: Accelerate</li>
             <li>S / Arrow Down: Brake</li>
             <li>A / D or Arrow Left / Right: Steer</li>
-            <li>Shift / Space: Nitro boost</li>
+            <li>Shift: Nitro boost</li>
+            <li>Space / F: Fire projectile</li>
+            <li>Collect glowing boxes for ammo and score</li>
+            <li>Battle takes place on a long Neo City GP circuit</li>
             <li>Host starts 3...2...1...GO countdown</li>
           </ul>
         </Panel>
