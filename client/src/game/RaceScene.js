@@ -203,26 +203,41 @@ function buildTrackWorld(arena) {
   group.add(cityBase);
 
   const shoulderMaterial = new THREE.MeshStandardMaterial({
-    color: 0x3c424e,
-    roughness: 0.82,
-    metalness: 0.15,
+    color: 0x4f5561,
+    roughness: 0.88,
+    metalness: 0.12,
   });
   const roadMaterial = new THREE.MeshStandardMaterial({
-    color: 0x252830,
-    roughness: 0.74,
-    metalness: 0.2,
+    color: 0x1f2329,
+    roughness: 0.92,
+    metalness: 0.08,
   });
-  const stripeMaterial = new THREE.MeshStandardMaterial({
-    color: 0xf1f4f9,
+  const centerDashMaterial = new THREE.MeshStandardMaterial({
+    color: 0xf4d03f,
+    roughness: 0.45,
+    metalness: 0.35,
+    emissive: 0x665514,
+    emissiveIntensity: 0.22,
+  });
+  const edgeLineMaterial = new THREE.MeshStandardMaterial({
+    color: 0xf5f7fa,
     roughness: 0.4,
-    metalness: 0.45,
-    emissive: 0x8a8f99,
-    emissiveIntensity: 0.15,
+    metalness: 0.4,
   });
   const barrierMaterial = new THREE.MeshStandardMaterial({
     color: 0xd14a2b,
     roughness: 0.42,
     metalness: 0.4,
+  });
+  const curbMaterialA = new THREE.MeshStandardMaterial({
+    color: 0xf4f5f6,
+    roughness: 0.58,
+    metalness: 0.2,
+  });
+  const curbMaterialB = new THREE.MeshStandardMaterial({
+    color: 0xd03930,
+    roughness: 0.5,
+    metalness: 0.25,
   });
 
   const points = arena.centerline;
@@ -243,23 +258,42 @@ function buildTrackWorld(arena) {
     const normalZ = dx / length;
 
     group.add(
-      createRoadStrip(length + 14, arena.hardHalfWidth * 2 + 10, 0.56, shoulderMaterial, midX, midZ, yaw)
+      createRoadStrip(length + 16, arena.hardHalfWidth * 2 + 16, 0.5, shoulderMaterial, midX, midZ, yaw)
     );
-    group.add(createRoadStrip(length + 2, arena.roadHalfWidth * 2, 0.8, roadMaterial, midX, midZ, yaw));
+    group.add(createRoadStrip(length + 2, arena.roadHalfWidth * 2, 0.76, roadMaterial, midX, midZ, yaw));
 
-    const stripeStep = 36;
-    const stripeLength = 16;
+    const edgeDistance = arena.roadHalfWidth - 1.1;
+    [-1, 1].forEach((side) => {
+      const edgeLine = new THREE.Mesh(new THREE.BoxGeometry(length + 1, 0.07, 1.15), edgeLineMaterial);
+      edgeLine.position.set(midX + normalX * edgeDistance * side, 0.87, midZ + normalZ * edgeDistance * side);
+      edgeLine.rotation.y = yaw;
+      edgeLine.receiveShadow = true;
+      group.add(edgeLine);
+    });
+
+    const stripeStep = 34;
+    const stripeLength = 14;
     const stripeCount = Math.floor(length / stripeStep);
     for (let stripeIndex = 0; stripeIndex < stripeCount; stripeIndex += 1) {
       const travel = -length * 0.5 + stripeIndex * stripeStep + stripeStep * 0.5;
       const x = midX + Math.sin(yaw) * travel;
       const z = midZ + Math.cos(yaw) * travel;
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(stripeLength, 0.12, 2.4), stripeMaterial);
-      stripe.position.set(x, 0.88, z);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(stripeLength, 0.1, 1.5), centerDashMaterial);
+      stripe.position.set(x, 0.86, z);
       stripe.rotation.y = yaw;
       stripe.receiveShadow = true;
       group.add(stripe);
     }
+
+    const curbDistance = arena.roadHalfWidth + 2;
+    const curbMaterial = index % 2 === 0 ? curbMaterialA : curbMaterialB;
+    [-1, 1].forEach((side) => {
+      const curb = new THREE.Mesh(new THREE.BoxGeometry(length + 6, 0.18, 3.2), curbMaterial);
+      curb.position.set(midX + normalX * curbDistance * side, 0.52, midZ + normalZ * curbDistance * side);
+      curb.rotation.y = yaw;
+      curb.receiveShadow = true;
+      group.add(curb);
+    });
 
     const barrierDistance = arena.hardHalfWidth + 3.2;
     [-1, 1].forEach((side) => {
@@ -311,29 +345,86 @@ function buildTrackWorld(arena) {
 function buildCarMesh(color) {
   const car = new THREE.Group();
 
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(2.4, 0.8, 4.2),
-    new THREE.MeshStandardMaterial({ color, roughness: 0.34, metalness: 0.52 })
-  );
-  body.position.y = 0.85;
-  car.add(body);
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.56 });
+  const trimMaterial = new THREE.MeshStandardMaterial({ color: 0x101217, roughness: 0.45, metalness: 0.55 });
+  const glassMaterial = new THREE.MeshStandardMaterial({ color: 0xcde6ff, roughness: 0.18, metalness: 0.72 });
 
-  const cabin = new THREE.Mesh(
-    new THREE.BoxGeometry(1.7, 0.6, 2),
-    new THREE.MeshStandardMaterial({ color: 0xcfe8ff, roughness: 0.2, metalness: 0.65 })
-  );
-  cabin.position.set(0, 1.35, -0.2);
-  car.add(cabin);
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.95, 0.72, 5.65), bodyMaterial);
+  chassis.position.y = 0.82;
+  car.add(chassis);
+
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(2.72, 0.4, 1.95), bodyMaterial);
+  hood.position.set(0, 1.14, 1.26);
+  car.add(hood);
+
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(2.24, 0.54, 2.05), bodyMaterial);
+  roof.position.set(0, 1.42, -0.1);
+  car.add(roof);
+
+  const windshield = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.36, 1.05), glassMaterial);
+  windshield.position.set(0, 1.43, 0.66);
+  car.add(windshield);
+
+  const rearGlass = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.3, 0.95), glassMaterial);
+  rearGlass.position.set(0, 1.35, -0.95);
+  car.add(rearGlass);
+
+  const rearDeck = new THREE.Mesh(new THREE.BoxGeometry(2.68, 0.36, 1.35), bodyMaterial);
+  rearDeck.position.set(0, 1.04, -2.0);
+  car.add(rearDeck);
+
+  const frontBumper = new THREE.Mesh(new THREE.BoxGeometry(2.92, 0.3, 0.4), trimMaterial);
+  frontBumper.position.set(0, 0.74, 2.95);
+  car.add(frontBumper);
+
+  const rearBumper = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.3, 0.4), trimMaterial);
+  rearBumper.position.set(0, 0.74, -2.95);
+  car.add(rearBumper);
+
+  const grille = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.24, 0.14), trimMaterial);
+  grille.position.set(0, 0.95, 2.75);
+  car.add(grille);
+
+  const headlightMaterial = new THREE.MeshStandardMaterial({
+    color: 0xfaf9ef,
+    emissive: 0xcabf79,
+    emissiveIntensity: 0.36,
+    roughness: 0.2,
+    metalness: 0.4,
+  });
+  const taillightMaterial = new THREE.MeshStandardMaterial({
+    color: 0xcd2727,
+    emissive: 0x7e1010,
+    emissiveIntensity: 0.45,
+    roughness: 0.28,
+    metalness: 0.4,
+  });
+
+  const leftHeadlight = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.22, 0.1), headlightMaterial);
+  leftHeadlight.position.set(-0.78, 0.95, 2.9);
+  car.add(leftHeadlight);
+
+  const rightHeadlight = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.22, 0.1), headlightMaterial);
+  rightHeadlight.position.set(0.78, 0.95, 2.9);
+  car.add(rightHeadlight);
+
+  const leftTail = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.18, 0.1), taillightMaterial);
+  leftTail.position.set(-0.75, 0.92, -2.9);
+  car.add(leftTail);
+
+  const rightTail = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.18, 0.1), taillightMaterial);
+  rightTail.position.set(0.75, 0.92, -2.9);
+  car.add(rightTail);
 
   const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.9 });
   const wheelOffsets = [
-    [-1.1, 0.45, -1.35],
-    [1.1, 0.45, -1.35],
-    [-1.1, 0.45, 1.35],
-    [1.1, 0.45, 1.35],
+    [-1.34, 0.5, -1.86],
+    [1.34, 0.5, -1.86],
+    [-1.34, 0.5, 1.86],
+    [1.34, 0.5, 1.86],
   ];
   wheelOffsets.forEach(([x, y, z]) => {
-    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.45, 20), wheelMaterial);
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.56, 0.48, 22), wheelMaterial);
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(x, y, z);
     car.add(wheel);
